@@ -5,6 +5,7 @@ import qualified Graphics.Rendering.OpenGL as GL
 import Graphics.Rendering.OpenGL (($=))
 import qualified Graphics.UI.GLFW as GLFW
 
+import Util
 import InputHandlers
 import Shapes
 import Functions
@@ -80,6 +81,9 @@ main = do
 			setWindowCallbacks ch worldState win
 			GLFW.swapInterval 1
 			GL.clearColor $= GL.Color4 1 1 1 1
+			GL.lineWidth $= 3
+			GL.lineSmooth $= GL.Enabled
+			resize 500 500
 			putStrLn "Entering mainLoop..."
 			mainLoop ch worldState win 
 			GLFW.destroyWindow win
