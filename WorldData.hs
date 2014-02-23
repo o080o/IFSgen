@@ -38,13 +38,30 @@ type WorldState = STM.TVar World
 newSystem :: Shape -> [Shape] -> IO System
 newSystem shape rShapes = do
 	s <- STM.newTVarIO []
-	return System{baseShape=shape,replaceShapes=rShapes,sysColor=(0,0,0),fillType=Outline,iter=1,drawShapes=s}
+	return System	{baseShape=shape
+			,replaceShapes=rShapes
+			,sysColor=(0,0,0)
+			,fillType=Outline
+			,iter=1
+			,drawShapes=s}
 
 newWorld :: [System] -> IO WorldState
 newWorld [] = do
 	defaultSys <- newSystem (Point (0,0)) [Point (0,0)]
-	STM.newTVarIO World {systems=[], selectedSys=defaultSys, selectedPoint=Nothing,mouseDragging=False,mouseDown=False,firstPos=(0,0),lastPos=(0,0)}
-newWorld (s:xs) = STM.newTVarIO World {systems=s:xs, selectedSys=s, selectedPoint=Nothing,mouseDragging=False,mouseDown=False,firstPos=(0,0),lastPos=(0,0)}
+	STM.newTVarIO World	{systems=[]
+				,selectedSys=defaultSys
+				,selectedPoint=Nothing
+				,mouseDragging=False
+				,mouseDown=False
+				,firstPos=(0,0)
+				,lastPos=(0,0)}
+newWorld (s:xs) = STM.newTVarIO World	{systems=s:xs
+					,selectedSys=s
+					,selectedPoint=Nothing
+					,mouseDragging=False
+					,mouseDown=False
+					,firstPos=(0,0)
+					,lastPos=(0,0)}
 
 -- some default system shapes.
 koch =		[Line (0,0) (1/3,0) 
