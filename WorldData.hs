@@ -2,7 +2,6 @@ module WorldData(
 koch,
 koch2,
 koch3,
-FillType(..),
 Color,
 System(..),
 World(..),
@@ -12,17 +11,22 @@ newSystem
 ) where
 
 import Control.Concurrent.STM as STM
+import Control.Concurrent.MVar
 import Shapes
+import Iterators
 
 -- define some data
-data FillType = Fill|Outline deriving (Eq)
+data WorkState = Done | Working 
 data System = System	{baseShape::Shape
-			,replaceShapes::[Shape]
+			,sysIter::Iterator
 			,sysColor::Color
-			,fillType::FillType
 			,iter::Int
+			,state::MVar WorkState
 			,drawShapes::STM.TVar [Shape]}
-			deriving (Eq)
+instance Eq System where
+	x == y = (drawShapes x) == (drawShapes y)
+
+
 
 data World = World	{systems::[System]
 			,selectedSys::System
@@ -38,12 +42,14 @@ type WorldState = STM.TVar World
 newSystem :: Shape -> [Shape] -> IO System
 newSystem shape rShapes = do
 	s <- STM.newTVarIO []
+	st <- newEmptyMVar
 	return System	{baseShape=shape
-			,replaceShapes=rShapes
+			,sysIter=newIter
 			,sysColor=(0,0,0)
-			,fillType=Outline
-			,iter=1
+			,iter=3
+			,state=st
 			,drawShapes=s}
+	where newIter = newSimpleIterator rShapes rShapes
 
 newWorld :: [System] -> IO WorldState
 newWorld [] = do

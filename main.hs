@@ -8,7 +8,6 @@ import qualified Graphics.UI.GLFW as GLFW
 import Util
 import InputHandlers
 import Shapes
-import Functions
 import WorldData
 
 --defaultSys =	[System {baseShape=bs1,replaceShapes=koch,sysColor=(0,0,0),fillType=Fill}

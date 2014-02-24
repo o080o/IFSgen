@@ -1,5 +1,6 @@
 module Util(
  resize
+,midpoint
 ,distance
 ) where
 
@@ -17,6 +18,8 @@ resize w h = do
 	--GL.perspective 45 (fromIntegral w / fromIntegral h) 1 100
 	GL.matrixMode $= GL.Modelview 0
 
+--midpoint :: (Floating a) => (a,a) -> (a,a) -> a
+midpoint (x1,y1) (x2,y2) = ((x1+x2)/2,(y1+y2)/2)
 -- return the distance between 2 points
 distance :: (Floating a) => (a,a) -> (a,a) -> a
 distance (x1,y1) (x2,y2) = sqrt $ dx*dx + dy*dy 

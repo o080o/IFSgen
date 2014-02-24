@@ -84,8 +84,66 @@ cursorPosCallback tc worldState win x y = STM.atomically $ do
 	where	transformSys sys Nothing = sys
 		transformSys sys (Just pnt) = snapTo x y sys pnt
 -- keyboard related callbacks
-keyCallback tc worldState win key sc keyState mod = putStrLn $ "key" ++ (show key) ++ (show sc) ++ (show keyState)
+
+-- Delete selected system on DELETE key
+keyCallback tc worldState _ GLFW.Key'Delete _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+	world <- STM.readTVar worldState
+	let	newsys = systems world
+	if length newsys > 1 then
+		STM.writeTVar worldState $ world	{systems=tail newsys,selectedSys=head newsys}
+	else
+		return ()
+-- Add a new system on SPACE key
+keyCallback tc worldState _ GLFW.Key'Space _ GLFW.KeyState'Pressed _ = do
+	sys <- newSystem (Point (0,0)) koch -- make a new system while in IO
+	STM.atomically $ do
+		world <- STM.readTVar worldState
+		let	(x,y) = lastPos world
+			sys' = sys { baseShape=Point (x,y) }
+			sel = selectedSys world
+		STM.writeTVar worldState $ world	{systems=sel:(systems world)
+							,selectedSys=sys'}
+
+-- increase iterations on +/= key
+keyCallback tc worldState _ GLFW.Key'Equal _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+	world <- STM.readTVar worldState
+	let	sel = selectedSys world
+		sel' = sel { iter=(iter sel) + 1 }
+	STM.writeTVar worldState $ world	{selectedSys=sel'}
+-- decrease iterations on -/_ key
+keyCallback tc worldState _ GLFW.Key'Minus _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+	world <- STM.readTVar worldState
+	let	sel = selectedSys world
+		sel' = sel { iter=(iter sel) - 1 }
+	STM.writeTVar worldState $ world	{selectedSys=sel'}
+			
+-- Change baseShape type on P key
+keyCallback tc worldState _ GLFW.Key'P _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+	where	changeTo (Point p) = Point p
+		changeTo (Line p p2) = Point $ midpoint p p2
+		changeTo (Circle p _) = Point p
+-- Change baseShape type on L key
+keyCallback tc worldState _ GLFW.Key'L _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+	where	changeTo (Point (x,y)) = Line (x-50,y) (x+50,y)
+		changeTo (Line p p2) = Line p p2
+		changeTo (Circle (h,k) r) = Line (h-r,k) (h+r,k)
+-- Change baseShape type on L key
+keyCallback tc worldState _ GLFW.Key'C _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+	where	changeTo (Point p) = Circle p 50
+		changeTo (Line p p2) = Circle (midpoint p p2) ((distance p p2)/2)
+		changeTo (Circle p r) = Circle p r
+
+-- catch-all keyboard callback
+keyCallback tc worldState win key sc keyState mod = putStrLn $ "key" ++ (show key) ++ " " ++ (show sc) ++ " " ++ (show keyState) ++ " " ++ (show mod)
 	
+-- body of keyhandlers 'T' 'L' and 'C'. changed one type of shape into another.
+changeBaseShape :: WorldState -> (Shape -> Shape) -> IO ()
+changeBaseShape worldState f = STM.atomically $ do
+	world <- STM.readTVar worldState
+	let	sel=selectedSys world
+		bs=baseShape sel
+		newsel=sel {baseShape=f bs}
+	STM.writeTVar worldState $ world	{selectedSys=newsel}
 ---------- helper functions-------------	
 --
 -- pick a system to select out of the world. 
@@ -134,7 +192,7 @@ selectPoint x y (Line (x1,y1) (x2,y2))
 	| otherwise = 0
 selectPoint x y (Circle (h,k) r) 
 	| (x `closeTo` h) && (y `closeTo` k) = 0
-	| otherwise = 0
+	| otherwise = 1
 selectPoint x y _ = 0 --unknown shape constructor
 -- helper functions for selecting shapes
 closeToGen :: (Num a, Ord a) => a -> a -> a -> Bool
