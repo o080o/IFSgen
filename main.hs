@@ -1,4 +1,5 @@
 import Control.Monad
+import Control.Concurrent
 import Control.Exception
 import qualified Control.Concurrent.STM as STM
 import qualified Graphics.Rendering.OpenGL as GL
@@ -24,20 +25,23 @@ defaultSys = do
 		bs3 = Line (200,50) (50,200)
 
 -- drawing handler. draws shapes.
-drawShapes :: GLFW.Window -> [Shape] -> Shape -> IO()
-drawShapes win shapes selShape = do
-	GL.loadIdentity
-	mapM_ (drawShape (255,255,255)) shapes 
-	drawShape (255,0,0) selShape 
-	GL.flush
+--drawShapes :: GLFW.Window -> [Shape] -> Shape -> IO()
+--drawShapes win shapes selShape = do
+--	GL.loadIdentity
+--	mapM_ (drawShape (255,255,255)) shapes 
+--	drawShape (255,0,0) selShape 
+--	GL.flush
 
 drawSys :: System -> IO ()
 drawSys sys = do
 	let	c = sysColor sys
 		s = baseShape sys
+	shapes <- STM.atomically $ STM.readTVar $ drawShapes sys
 	drawShape c s
+	mapM_ (drawShape c) shapes
 	return ()
 	
+-- drawing handler. draws systems.
 drawSystems :: GLFW.Window -> [System] -> IO ()
 drawSystems win sys = do
 	GL.loadIdentity
@@ -60,7 +64,7 @@ mainLoop ch worldState win = do
 
 
 	putStrLn $ "Select:" ++ (show test)
-	-- close program when window closes.
+	-- close program when window closes. (NYI)
 	isOpen <- return True
 	when isOpen $ mainLoop ch worldState win
 
@@ -72,19 +76,23 @@ main = do
 	window <- GLFW.createWindow 500 500 "Title" Nothing Nothing
 	case window of
 		(Just win) -> do
-			ch <- STM.newTChanIO :: IO (STM.TChan InputMsg)
+			-- TChannel for window messages (NYI)
+			winch <- STM.newTChanIO :: IO (STM.TChan InputMsg)
+			-- TChannel for System solving queue
+			ch <- STM.newTChanIO :: IO (STM.TChan System)
 			sys <- defaultSys
 			worldState <- newWorld sys
 			
 			GLFW.makeContextCurrent window
-			setWindowCallbacks ch worldState win
+			setWindowCallbacks winch ch worldState win
 			GLFW.swapInterval 1
 			GL.clearColor $= GL.Color4 1 1 1 1
 			GL.lineWidth $= 3
 			GL.lineSmooth $= GL.Enabled
 			resize 500 500
 			putStrLn "Entering mainLoop..."
-			mainLoop ch worldState win 
+			forkIO $ watchSystems ch []
+			mainLoop winch worldState win 
 			GLFW.destroyWindow win
 		Nothing -> return ()
 	GLFW.terminate

@@ -28,27 +28,29 @@ dragThresh = 5
 
 -- GLFW handlers!
 -- type declarations
+-- window callbacks:
 errorCallback 		:: GLFW.Error -> String -> IO ()
 windowSizeCallback	:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> Int -> Int -> IO ()
 windowCloseCallback	:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> IO ()
 windowRefreshCallback	:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> IO ()
-mouseButtonCallback	:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> GLFW.MouseButton ->GLFW.MouseButtonState -> GLFW.ModifierKeys -> IO ()
-cursorPosCallback	:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> Double -> Double -> IO ()
-keyCallback		:: STM.TChan InputMsg -> WorldState -> GLFW.Window -> GLFW.Key -> Int -> GLFW.KeyState -> GLFW.ModifierKeys -> IO ()
+-- input callbacks:
+mouseButtonCallback	:: STM.TChan System -> WorldState -> GLFW.Window -> GLFW.MouseButton ->GLFW.MouseButtonState -> GLFW.ModifierKeys -> IO ()
+cursorPosCallback	:: STM.TChan System -> WorldState -> GLFW.Window -> Double -> Double -> IO ()
+keyCallback		:: STM.TChan System -> WorldState -> GLFW.Window -> GLFW.Key -> Int -> GLFW.KeyState -> GLFW.ModifierKeys -> IO ()
 
 -- Define handlers. Where the Magic happens!
 errorCallback err str = putStrLn str
 
 -- window related callbacks
-windowSizeCallback tc _ win w h = resize w h
+windowSizeCallback ch _ win w h = resize w h
 
-windowCloseCallback tc _ win = GLFW.destroyWindow win
+windowCloseCallback ch _ win = GLFW.destroyWindow win
 
-windowRefreshCallback tc _ win = STM.atomically $ STM.writeTChan tc WinRefresh
+windowRefreshCallback ch _ win = STM.atomically $ STM.writeTChan ch WinRefresh
 
 -- mouse related callbacks
 -- mouse press
-mouseButtonCallback tc worldState win GLFW.MouseButton'1 GLFW.MouseButtonState'Pressed _ = STM.atomically $ do
+mouseButtonCallback ch worldState win GLFW.MouseButton'1 GLFW.MouseButtonState'Pressed _ = STM.atomically $ do
 	world <- STM.readTVar worldState
 	let	(x,y) = lastPos world
 		(newsys,sel,pnt) = pickSys x y world
@@ -61,32 +63,33 @@ mouseButtonCallback tc worldState win GLFW.MouseButton'1 GLFW.MouseButtonState'P
 
 
 -- mouse release
-mouseButtonCallback tc worldState win GLFW.MouseButton'1 GLFW.MouseButtonState'Released _ = STM.atomically $ do
+mouseButtonCallback ch worldState win GLFW.MouseButton'1 GLFW.MouseButtonState'Released _ = STM.atomically $ do
 	world <- STM.readTVar worldState
 	STM.writeTVar worldState $ world	{mouseDown=False
 						,mouseDragging=False
 						,selectedPoint=Nothing}
 -- catch-all mouseButton pattern
-mouseButtonCallback tc worldState win _ _ _ = return ()
+mouseButtonCallback ch worldState win _ _ _ = return ()
 
 -- mouse move
-cursorPosCallback tc worldState win x y = STM.atomically $ do
-	world <- STM.readTVar worldState
-	-- test for mosue drag conditions
-	if mouseDown world && (mouseDragging world || distance (firstPos world) (x,y)>dragThresh) then
-		let	sel = selectedSys world
-			pnt = selectedPoint world
-		 	sys = transformSys sel pnt
-		in STM.writeTVar worldState $ world	{mouseDragging=True
-							,selectedSys=sys
-							,lastPos=(x,y)}
-	else STM.writeTVar worldState world {lastPos=(x,y)}
+cursorPosCallback ch worldState win x y = STM.atomically $ do
+		world <- STM.readTVar worldState
+		-- test for mosue drag conditions
+		if mouseDown world && (mouseDragging world || distance (firstPos world) (x,y)>dragThresh) then do
+			let	sel = selectedSys world
+				pnt = selectedPoint world
+				sel' = transformSys sel pnt
+			STM.writeTVar worldState $ world	{mouseDragging=True
+								,selectedSys=sel'
+								,lastPos=(x,y)}
+			STM.writeTChan ch sel'
+		else STM.writeTVar worldState world {lastPos=(x,y)}
 	where	transformSys sys Nothing = sys
 		transformSys sys (Just pnt) = snapTo x y sys pnt
 -- keyboard related callbacks
 
 -- Delete selected system on DELETE key
-keyCallback tc worldState _ GLFW.Key'Delete _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+keyCallback ch worldState _ GLFW.Key'Delete _ GLFW.KeyState'Pressed _ = STM.atomically $ do
 	world <- STM.readTVar worldState
 	let	newsys = systems world
 	if length newsys > 1 then
@@ -94,7 +97,7 @@ keyCallback tc worldState _ GLFW.Key'Delete _ GLFW.KeyState'Pressed _ = STM.atom
 	else
 		return ()
 -- Add a new system on SPACE key
-keyCallback tc worldState _ GLFW.Key'Space _ GLFW.KeyState'Pressed _ = do
+keyCallback ch worldState _ GLFW.Key'Space _ GLFW.KeyState'Pressed _ = do
 	sys <- newSystem (Point (0,0)) koch -- make a new system while in IO
 	STM.atomically $ do
 		world <- STM.readTVar worldState
@@ -103,47 +106,51 @@ keyCallback tc worldState _ GLFW.Key'Space _ GLFW.KeyState'Pressed _ = do
 			sel = selectedSys world
 		STM.writeTVar worldState $ world	{systems=sel:(systems world)
 							,selectedSys=sys'}
+		STM.writeTChan ch sys'
 
 -- increase iterations on +/= key
-keyCallback tc worldState _ GLFW.Key'Equal _ GLFW.KeyState'Pressed _ = STM.atomically $ do
-	world <- STM.readTVar worldState
-	let	sel = selectedSys world
-		sel' = sel { iter=(iter sel) + 1 }
-	STM.writeTVar worldState $ world	{selectedSys=sel'}
+keyCallback ch worldState _ GLFW.Key'Equal _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+		world <- STM.readTVar worldState
+		let	sel = selectedSys world
+			sel' = sel { iter=(iter sel) + 1 }
+		STM.writeTVar worldState $ world	{selectedSys=sel'}
+		STM.writeTChan ch sel'
 -- decrease iterations on -/_ key
-keyCallback tc worldState _ GLFW.Key'Minus _ GLFW.KeyState'Pressed _ = STM.atomically $ do
-	world <- STM.readTVar worldState
-	let	sel = selectedSys world
-		sel' = sel { iter=(iter sel) - 1 }
-	STM.writeTVar worldState $ world	{selectedSys=sel'}
+keyCallback ch worldState _ GLFW.Key'Minus _ GLFW.KeyState'Pressed _ = STM.atomically $ do
+		world <- STM.readTVar worldState
+		let	sel = selectedSys world
+			sel' = sel { iter=(iter sel) - 1 }
+		STM.writeTVar worldState $ world	{selectedSys=sel'}
+		STM.writeTChan ch sel'
 			
 -- Change baseShape type on P key
-keyCallback tc worldState _ GLFW.Key'P _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+keyCallback ch worldState _ GLFW.Key'P _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
 	where	changeTo (Point p) = Point p
 		changeTo (Line p p2) = Point $ midpoint p p2
 		changeTo (Circle p _) = Point p
 -- Change baseShape type on L key
-keyCallback tc worldState _ GLFW.Key'L _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+keyCallback ch worldState _ GLFW.Key'L _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
 	where	changeTo (Point (x,y)) = Line (x-50,y) (x+50,y)
 		changeTo (Line p p2) = Line p p2
 		changeTo (Circle (h,k) r) = Line (h-r,k) (h+r,k)
--- Change baseShape type on L key
-keyCallback tc worldState _ GLFW.Key'C _ GLFW.KeyState'Pressed _ = changeBaseShape worldState (changeTo)
+-- Change baseShape type on C key
+keyCallback ch worldState _ GLFW.Key'C _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
 	where	changeTo (Point p) = Circle p 50
 		changeTo (Line p p2) = Circle (midpoint p p2) ((distance p p2)/2)
 		changeTo (Circle p r) = Circle p r
 
 -- catch-all keyboard callback
-keyCallback tc worldState win key sc keyState mod = putStrLn $ "key" ++ (show key) ++ " " ++ (show sc) ++ " " ++ (show keyState) ++ " " ++ (show mod)
+keyCallback ch worldState win key sc keyState mod = putStrLn $ "key" ++ (show key) ++ " " ++ (show sc) ++ " " ++ (show keyState) ++ " " ++ (show mod)
 	
 -- body of keyhandlers 'T' 'L' and 'C'. changed one type of shape into another.
-changeBaseShape :: WorldState -> (Shape -> Shape) -> IO ()
-changeBaseShape worldState f = STM.atomically $ do
-	world <- STM.readTVar worldState
-	let	sel=selectedSys world
-		bs=baseShape sel
-		newsel=sel {baseShape=f bs}
-	STM.writeTVar worldState $ world	{selectedSys=newsel}
+changeBaseShape :: STM.TChan System -> WorldState -> (Shape -> Shape) -> IO ()
+changeBaseShape ch worldState f = STM.atomically $ do
+		world <- STM.readTVar worldState
+		let	sel=selectedSys world
+			bs=baseShape sel
+			newsel=sel {baseShape=f bs}
+		STM.writeTVar worldState $ world	{selectedSys=newsel}
+		STM.writeTChan ch newsel
 ---------- helper functions-------------	
 --
 -- pick a system to select out of the world. 
@@ -206,12 +213,12 @@ closeTo = (closeToGen 50.0)
 
 
 ------------------------ Register all callbacks
-setWindowCallbacks :: STM.TChan InputMsg -> WorldState -> GLFW.Window -> IO ()
-setWindowCallbacks tc world win = do
+setWindowCallbacks :: STM.TChan InputMsg -> STM.TChan System -> WorldState -> GLFW.Window -> IO ()
+setWindowCallbacks winch ch world win = do
 	GLFW.setErrorCallback		   $ Just $ errorCallback
-	GLFW.setWindowSizeCallback	win $ Just $ windowSizeCallback tc world
-	GLFW.setWindowCloseCallback	win $ Just $ windowCloseCallback tc world
-	GLFW.setWindowRefreshCallback	win $ Just $ windowRefreshCallback tc world
-	GLFW.setMouseButtonCallback	win $ Just $ mouseButtonCallback tc world
-	GLFW.setCursorPosCallback	win $ Just $ cursorPosCallback tc world
-	GLFW.setKeyCallback		win $ Just $ keyCallback tc world
+	GLFW.setWindowSizeCallback	win $ Just $ windowSizeCallback winch world
+	GLFW.setWindowCloseCallback	win $ Just $ windowCloseCallback winch world
+	GLFW.setWindowRefreshCallback	win $ Just $ windowRefreshCallback winch world
+	GLFW.setMouseButtonCallback	win $ Just $ mouseButtonCallback ch world
+	GLFW.setCursorPosCallback	win $ Just $ cursorPosCallback ch world
+	GLFW.setKeyCallback		win $ Just $ keyCallback ch world

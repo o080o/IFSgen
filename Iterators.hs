@@ -19,7 +19,9 @@ simpleIter_iterateN ishapes dshapes results n s = simpleIter_iterateN' ishapes d
 
 -- Iterate a list of shapes N times
 simpleIter_iterateN' :: [Shape] -> [Shape] -> STM.TVar [Shape] -> Int -> [Shape] -> IO ()
+simpleIter_iterateN' _ _ _ 0 _ = return ()
 simpleIter_iterateN' ishapes dshapes results n s = do
+	putStrLn $ "iter " ++ (show n)
 	let (iterShapes, drawShapes) = foldl (combine) start $map (simpleIter_iterate ishapes dshapes) s
 	STM.atomically $ STM.writeTVar results drawShapes
 	simpleIter_iterateN' ishapes dshapes results (n-1) iterShapes
