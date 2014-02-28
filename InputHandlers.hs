@@ -11,6 +11,7 @@ import qualified Control.Concurrent.STM as STM
 import WorldData
 import Shapes
 import Util
+import Iterators
 
 -- Input messages
 data InputMsg 	=WinResize Int Int
@@ -79,10 +80,13 @@ cursorPosCallback ch worldState win x y = STM.atomically $ do
 			let	sel = selectedSys world
 				pnt = selectedPoint world
 				sel' = transformSys sel pnt
-			STM.writeTVar worldState $ world	{mouseDragging=True
-								,selectedSys=sel'
-								,lastPos=(x,y)}
-			STM.writeTChan ch sel'
+			case pnt of
+				Just _ -> do
+					STM.writeTVar worldState $ world	{mouseDragging=True
+										,selectedSys=sel'
+										,lastPos=(x,y)}
+					STM.writeTChan ch sel'
+				Nothing -> return ()
 		else STM.writeTVar worldState world {lastPos=(x,y)}
 	where	transformSys sys Nothing = sys
 		transformSys sys (Just pnt) = snapTo x y sys pnt
@@ -98,15 +102,15 @@ keyCallback ch worldState _ GLFW.Key'Delete _ GLFW.KeyState'Pressed _ = STM.atom
 		return ()
 -- Add a new system on SPACE key
 keyCallback ch worldState _ GLFW.Key'Space _ GLFW.KeyState'Pressed _ = do
-	sys <- newSystem (Point (0,0)) koch -- make a new system while in IO
 	STM.atomically $ do
 		world <- STM.readTVar worldState
+		s<-STM.newTVar []
 		let	(x,y) = lastPos world
-			sys' = sys { baseShape=Point (x,y) }
 			sel = selectedSys world
+			sys = newKoch' s (x,y) (x+100,y) -- make a new system while in IO
 		STM.writeTVar worldState $ world	{systems=sel:(systems world)
-							,selectedSys=sys'}
-		STM.writeTChan ch sys'
+							,selectedSys=sys}
+		STM.writeTChan ch sys
 
 -- increase iterations on +/= key
 keyCallback ch worldState _ GLFW.Key'Equal _ GLFW.KeyState'Pressed _ = STM.atomically $ do
@@ -119,38 +123,13 @@ keyCallback ch worldState _ GLFW.Key'Equal _ GLFW.KeyState'Pressed _ = STM.atomi
 keyCallback ch worldState _ GLFW.Key'Minus _ GLFW.KeyState'Pressed _ = STM.atomically $ do
 		world <- STM.readTVar worldState
 		let	sel = selectedSys world
-			sel' = sel { iter=(iter sel) - 1 }
+			sel' = if (iter sel)>0 then sel { iter=(iter sel) - 1 } else sel
 		STM.writeTVar worldState $ world	{selectedSys=sel'}
 		STM.writeTChan ch sel'
-			
--- Change baseShape type on P key
-keyCallback ch worldState _ GLFW.Key'P _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
-	where	changeTo (Point p) = Point p
-		changeTo (Line p p2) = Point $ midpoint p p2
-		changeTo (Circle p _) = Point p
--- Change baseShape type on L key
-keyCallback ch worldState _ GLFW.Key'L _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
-	where	changeTo (Point (x,y)) = Line (x-50,y) (x+50,y)
-		changeTo (Line p p2) = Line p p2
-		changeTo (Circle (h,k) r) = Line (h-r,k) (h+r,k)
--- Change baseShape type on C key
-keyCallback ch worldState _ GLFW.Key'C _ GLFW.KeyState'Pressed _ = changeBaseShape ch worldState (changeTo)
-	where	changeTo (Point p) = Circle p 50
-		changeTo (Line p p2) = Circle (midpoint p p2) ((distance p p2)/2)
-		changeTo (Circle p r) = Circle p r
 
 -- catch-all keyboard callback
 keyCallback ch worldState win key sc keyState mod = putStrLn $ "key" ++ (show key) ++ " " ++ (show sc) ++ " " ++ (show keyState) ++ " " ++ (show mod)
 	
--- body of keyhandlers 'T' 'L' and 'C'. changed one type of shape into another.
-changeBaseShape :: STM.TChan System -> WorldState -> (Shape -> Shape) -> IO ()
-changeBaseShape ch worldState f = STM.atomically $ do
-		world <- STM.readTVar worldState
-		let	sel=selectedSys world
-			bs=baseShape sel
-			newsel=sel {baseShape=f bs}
-		STM.writeTVar worldState $ world	{selectedSys=newsel}
-		STM.writeTChan ch newsel
 ---------- helper functions-------------	
 --
 -- pick a system to select out of the world. 
@@ -160,50 +139,22 @@ pickSys x y world =	let	oldsel = selectedSys world
 				(newsel,pnt) = pick selectable
 				newsys = filter (newsel /=) (oldsel:oldsys)
 			in (newsys,newsel,pnt)
-	where	selectable = filter (canSelectSys x y)  ((selectedSys world):(systems world)) -- returns a list of possible selectable systems
+	where	selectable = filter (canSelect)  ((selectedSys world):(systems world)) -- returns a list of possible selectable systems
 		pick [] = (selectedSys world,Nothing)
-		pick (s:_) = (s,Just $ selectPoint x y (baseShape s))
+		pick (s:_) = (s,selPoint s)
+		selPoint s = foldl (\acc (i,p)->if p `closeTo` (x,y) then Just i else acc) Nothing (zip [0..] (controlPoints s))
+		closePoints s = filter (closeTo (x,y)) (controlPoints s)
+		canSelect s = (not . null) (closePoints s)
 
 -- Snap system  point to x,y
 snapTo :: Double -> Double -> System -> Int -> System
-snapTo x y sys pnt = sys {baseShape=snapShapeTo x y (baseShape sys) pnt}
--- snap shape point tp x,y
-snapShapeTo :: Double -> Double -> Shape -> Int -> Shape
-snapShapeTo x y (Point (px,py)) _ = Point (x,y)
-snapShapeTo x y (Line (x1,y1) (x2,y2)) sel 
-	| sel==0 = Line (x,y) (x2,y2)
-	| sel==1 = Line (x1,y1) (x,y)
-	| otherwise = Line (x1,y1) (x2,y2)
+snapTo x y sys n = sys { controlPoints=newPoints }
+	where	points = controlPoints sys
+		newPoints = (take n points)++(x,y):(drop (n+1) points)
 
-snapShapeTo x y (Circle (h,k) r) sel 
-	| sel==0 = Circle (x,y) r
-	| sel==1 = Circle (h,k) $ distance (x,y) (h,k)
-	| otherwise = Circle (h,k) r
-snapShapeTo x y s _ = s -- unknown shape constructor
-
--- returns true if System is within selectable distance of x,y
-canSelectSys :: Double -> Double -> System -> Bool
-canSelectSys x y sys = canSelectShape x y $ baseShape sys
--- returns true if Shape is within selectable distance of x,y
-canSelectShape :: Double -> Double -> Shape -> Bool
-canSelectShape x y (Point (px,py)) = x `closeTo` px && y `closeTo` py 
-canSelectShape x y (Line (x1,y1) (x2,y2)) = (x `closeTo` x1 && y `closeTo` y1) || (x `closeTo` x2 && y `closeTo` y2) 
-canSelectShape x y (Circle (h,k) r) = (x `closeTo` h && y `closeTo` k) || (distance (x,y) (h,k)) `closeTo` r
-canSelectShape x y _ = False --unknown shape constructor
-
-selectPoint :: Double -> Double -> Shape -> Int
-selectPoint x y (Point (px,py)) = 0
-selectPoint x y (Line (x1,y1) (x2,y2))
-	| x `closeTo` x1 && y `closeTo` y1 = 0
-	| x `closeTo` x2 && y `closeTo` y2 = 1
-	| otherwise = 0
-selectPoint x y (Circle (h,k) r) 
-	| (x `closeTo` h) && (y `closeTo` k) = 0
-	| otherwise = 1
-selectPoint x y _ = 0 --unknown shape constructor
 -- helper functions for selecting shapes
-closeToGen :: (Num a, Ord a) => a -> a -> a -> Bool
-closeToGen d a b = ( (b-d) < a && a < (b+d))
+closeToGen :: (Num a, Ord a) => a -> (a,a) -> (a,a) -> Bool
+closeToGen d (x,y) (x',y') = ((x-d) < x' && x' < (x+d)) && ((y-d) < y' && y' < (y+d))
 closeTo = (closeToGen 50.0)
 
 

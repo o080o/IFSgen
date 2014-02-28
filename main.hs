@@ -10,19 +10,21 @@ import Util
 import InputHandlers
 import Shapes
 import WorldData
+import System
+import Iterators
 
 --defaultSys =	[System {baseShape=bs1,replaceShapes=koch,sysColor=(0,0,0),fillType=Fill}
 		--,System {baseShape=bs3,replaceShapes=koch2,sysColor=(0,0,0),fillType=Fill}
 		--,System {baseShape=bs2,replaceShapes=koch3,sysColor=(0,0,0),fillType=Fill}]
 defaultSys :: IO [System]
 defaultSys = do
-	sys1 <- newSystem bs1 koch
-	sys2 <- newSystem bs2 koch2
-	sys3 <- newSystem bs3 koch3
+	sys1 <- newKoch (175,175) (200,150)
+	sys2 <- newIFS bs2 koch2
+	sys3 <- newIFS bs3 koch3
 	return [sys1,sys2,sys3]
-	where	bs1=Line (50,50) (150,150)
-		bs2=Line (100,100) (200,200)
-		bs3 = Line (200,50) (50,200)
+	where	bs1=newLine (50,50) (150,150)
+		bs2=newLine (100,100) (200,200)
+		bs3 =newLine (200,50) (50,200)
 
 -- drawing handler. draws shapes.
 --drawShapes :: GLFW.Window -> [Shape] -> Shape -> IO()
@@ -31,14 +33,21 @@ defaultSys = do
 --	mapM_ (drawShape (255,255,255)) shapes 
 --	drawShape (255,0,0) selShape 
 --	GL.flush
+--
+makeGLfloat :: Double -> GL.GLfloat
+makeGLfloat = realToFrac
+setColor (r,g,b) = GL.renderPrimitive GL.Points $ do
+	GL.color $ (GL.Color3 (makeGLfloat r) (makeGLfloat g) (makeGLfloat b))
+	GL.color $ (GL.Color3 (makeGLfloat r) (makeGLfloat g) (makeGLfloat b))
 
 drawSys :: System -> IO ()
 drawSys sys = do
-	let	c = sysColor sys
-		s = baseShape sys
+	let	base = (baseShapes sys) (controlPoints sys)
 	shapes <- STM.atomically $ STM.readTVar $ drawShapes sys
-	drawShape c s
-	mapM_ (drawShape c) shapes
+	setColor (0,0,0)
+	mapM_ (drawShape) shapes
+	setColor (1,0,0)
+	mapM_ (drawShape) base
 	return ()
 	
 -- drawing handler. draws systems.
