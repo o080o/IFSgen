@@ -23,6 +23,29 @@ data Shape = Shape	{vertices::[Vector]
 			,scale::Double
 			,offset::Vector}
 
+data Shape = (DRAWFUNCTION, Matrix)
+
+data Matrix = [[Double]] -- Matrix definition
+
+
+multMatrix :: Matrix -> Matrix -> Matrix
+multMatrix m1, m2 = col(m1) * row(m2)
+
+dot :: [Double] -> [Double] -> Double
+dot [x] [j] = x * j
+dot (x:xs) (y:ys) = x * y + (xs `dot` ys)
+
+row :: Int -> Matrix -> [Duoble]
+row i m = m !! i
+
+col :: Int -> Matrix -> [Double]
+col i rows = map (!! i) rows
+
+--[[1,2],
+-- [3,4]]
+
+col i m = map (!! i) m
+
 -- draw an arbitrary shape using its drawFunc
 drawShape :: Shape -> IO ()
 drawShape s = (drawFunc s) s

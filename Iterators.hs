@@ -20,6 +20,8 @@ newKoch' s p1 p2 = System	{controlPoints=[p1,p2]
 				,iter=3
 				,drawShapes=s}
 
+-- generate new Kock curve in an IO monad.
+-- creates TVar to store results
 newKoch :: Vector -> Vector -> IO System
 newKoch p1 p2 = do
 	s <- STM.newTVarIO []
@@ -35,11 +37,14 @@ newIFS' s shape rShapes = System	{controlPoints=baseCP
 	where	baseCP = vertices shape
 		replaceCP = concat $ map (vertices) rShapes
 
+-- generate new IFS system in an IO monad.
+-- creates TVar to store results
 newIFS :: Shape -> [Shape] -> IO System
 newIFS shape rShapes = do
 	s <- STM.newTVarIO []
 	return $ newIFS' s shape rShapes
 
+-- 'solve' to get the final image
 solveKoch :: System -> IO ([Shape])
 solveKoch = solveIFS kochi kochd
 
